@@ -32,32 +32,41 @@ def get_unique_plate_ids_from_reconstructed_features(reconstructed_features):
     return unique_plate_ids
 
 
-def GetPolygonCentroids(static_polygons):
+def GetPolygonCentroids(polygons):
     """
     Returns dict mapping plate IDs of static polygons to centroid of largest polygon
     associated with each plate ID.
     There is guaranteed to be a centroid for each plate ID.
     """
     
+    is_resolved_topology = (type(polygons[0]) == pygplates.ResolvedTopologicalBoundary)
+    
     centroid_dict = {}
     
     # Map plate ID to target area.
     target_polygon_area_dict = {}
-    for polygon in static_polygons:
+    for polygon in polygons:
         plateid = polygon.get_feature().get_reconstruction_plate_id()
-        area = polygon.get_reconstructed_geometry().get_area()
+        if is_resolved_topology:
+            area = polygon.get_resolved_geometry().get_area()
+        else:
+            area = polygon.get_reconstructed_geometry().get_area()
         
         # If first time adding area for plate ID or polygon area largest so far then
         # set new target area and also set new centroid.
         target_polygon_area = target_polygon_area_dict.get(plateid)
         if target_polygon_area is None or area > target_polygon_area:
             target_polygon_area_dict[plateid] = area
-            centroid_dict[plateid] = ( # parentheses just so can put on next line...
-                    polygon.get_reconstructed_geometry().get_boundary_centroid().to_lat_lon())
+            if is_resolved_topology:
+                centroid_dict[plateid] = ( # parentheses just so can put on next line...
+                        polygon.get_resolved_geometry().get_boundary_centroid().to_lat_lon())
+            else:
+                centroid_dict[plateid] = ( # parentheses just so can put on next line...
+                        polygon.get_reconstructed_geometry().get_boundary_centroid().to_lat_lon())
     
     return centroid_dict
 
-
+################ UNUSED????? START
 # function to get centroid from every polygon in the reconstructed static polygons
 def GetPolygonCentroid(static_polygons,plateid):
     centroid = None
@@ -70,7 +79,6 @@ def GetPolygonCentroid(static_polygons,plateid):
     
     return centroid
 
-
 # Alternatively, get centroids of topological polygons
 def GetPlateCentroid(resolved_polygons,plateid):
     centroid = None
@@ -79,6 +87,7 @@ def GetPlateCentroid(resolved_polygons,plateid):
             centroid = polygon.get_resolved_boundary().get_boundary_centroid().to_lat_lon()
     
     return centroid
+################ UNUSED????? END
 
 
 def get_root_static_polygon_plate_ids(reconstruction_tree, uniq_plates_from_static_polygons):
@@ -177,12 +186,13 @@ def get_plate_chains(uniq_plates_from_static_polygons, reconstruction_tree):
         if chain:
             chains.append(chain)
         else:
-            print 'Root plate geometry with plate id %d' % plate
+            #print 'Root plate geometry with plate id %d' % plate
+            continue
             
     return chains
-        
 
-def create_hierarchy_features(chains,reconstructed_static_polygons,tree_features=None,valid_time=None):
+
+def create_hierarchy_features(chains,reconstructed_polygons,tree_features=None,valid_time=None):
     #take plate chains and static polygons, and create a set of line features that 
     # join up the centroid points of polygons based on their linkage in the rotation
     # hierarchy. 
@@ -193,7 +203,7 @@ def create_hierarchy_features(chains,reconstructed_static_polygons,tree_features
     if tree_features is None:
         tree_features = []
 
-    polygon_centroids = GetPolygonCentroids(reconstructed_static_polygons)
+    polygon_centroids = GetPolygonCentroids(reconstructed_polygons)
     
     for chain in chains:
 
@@ -210,5 +220,5 @@ def create_hierarchy_features(chains,reconstructed_static_polygons,tree_features
             feature.set_valid_time(valid_time[0],valid_time[1])
 
         tree_features.append(feature)
-               
+
     return tree_features
