@@ -17,6 +17,7 @@
 
 import pygplates
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 def get_unique_plate_pairs_from_rotation_model(rotation_model,recon_time):
@@ -49,7 +50,7 @@ def get_unique_plate_ids_from_reconstructed_features(reconstructed_features):
     return unique_plate_ids
 
 
-def GetPolygonCentroids(polygons):
+def get_polygon_centroids(polygons):
     """
     Returns dict mapping plate IDs of static polygons to centroid of largest polygon
     associated with each plate ID.
@@ -85,7 +86,7 @@ def GetPolygonCentroids(polygons):
 
 ################ UNUSED????? START
 # function to get centroid from every polygon in the reconstructed static polygons
-def GetPolygonCentroid(static_polygons,plateid):
+def get_polygon_centroid(static_polygons,plateid):
     centroid = None
     target_polygon_area = 0
     for polygon in static_polygons:
@@ -97,7 +98,7 @@ def GetPolygonCentroid(static_polygons,plateid):
     return centroid
 
 # Alternatively, get centroids of topological polygons
-def GetPlateCentroid(resolved_polygons,plateid):
+def get_plate_centroid(resolved_polygons,plateid):
     centroid = None
     for polygon in resolved_polygons:
         if polygon.get_feature().get_reconstruction_plate_id()==plateid:
@@ -220,7 +221,7 @@ def create_hierarchy_features(chains,reconstructed_polygons,tree_features=None,v
     if tree_features is None:
         tree_features = []
 
-    polygon_centroids = GetPolygonCentroids(reconstructed_polygons)
+    polygon_centroids = get_polygon_centroids(reconstructed_polygons)
     
     for chain in chains:
 
@@ -239,3 +240,56 @@ def create_hierarchy_features(chains,reconstructed_polygons,tree_features=None,v
         tree_features.append(feature)
 
     return tree_features
+
+
+def tree_snapshot(polygons, rotation_model, recon_time):
+
+    reconstructed_polygons = []
+    pygplates.reconstruct(polygons,rotation_model,reconstructed_polygons,recon_time)
+
+    uniq_plates_from_polygons = get_unique_plate_ids_from_reconstructed_features(reconstructed_polygons)
+
+    reconstruction_tree = rotation_model.get_reconstruction_tree(recon_time)
+
+    chains = get_plate_chains(uniq_plates_from_polygons, reconstruction_tree)
+
+    return uniq_plates_from_polygons, chains, reconstruction_tree, reconstructed_polygons
+
+
+def plot_snapshot(polygons, rotation_model, recon_time, figsize=(14,9)):
+
+    (uniq_plates_from_polygons, 
+     chains, 
+     reconstruction_tree,
+     reconstructed_polygons) = tree_snapshot(polygons,
+                                             rotation_model,
+                                             recon_time)
+
+    polygon_centroids = get_polygon_centroids(reconstructed_polygons)
+
+    plt.figure(figsize=figsize)
+
+    for chain in chains:
+        # First and last plate IDs in a chain always correspond to a static polygon.
+        # So p0 and p1 should not be None.
+        p0 = polygon_centroids[chain[0]]
+        p1 = polygon_centroids[chain[-1]]
+
+        # More than two plate IDs in a chain means plate circuit from first to last passed though
+        # plate IDs that did not have geometries (static polygons) at the recon time.
+        if len(chain)==2:
+            plt.plot([p0[1],p1[1]],[p0[0],p1[0]],'-ro',linewidth=2,zorder=1,alpha=0.5)
+        else:
+            plt.plot([p0[1],p1[1]],[p0[0],p1[0]],'-o',color='gray',linewidth=2,zorder=1,alpha=0.5)
+        plt.text(p0[1],p0[0],str(chain[0]),zorder=2)
+
+    # Find plates closest to root/anchor plate that are in the static polygons.
+    root_plates = get_root_static_polygon_plate_ids(reconstruction_tree, uniq_plates_from_polygons)
+
+    for root_plate in root_plates:
+        p0 = polygon_centroids[root_plate]
+        plt.plot(p0[1],p0[0],'bh',markersize=20,zorder=3,alpha=0.5)
+        plt.text(p0[1],p0[0],str(root_plate),zorder=4)
+
+	plt.axis([-180,180,-90,90])
+    plt.show()
