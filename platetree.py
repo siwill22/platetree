@@ -293,3 +293,56 @@ def plot_snapshot(polygons, rotation_model, recon_time, figsize=(14,9)):
 
 	plt.axis([-180,180,-90,90])
     plt.show()
+    
+    
+def write_trees_to_file(input_features, rotation_model, filename, 
+                        reconstruction_time_range, time_step=1, 
+                        polygon_type='static', root_feature_filename=None):
+    
+    reconstruction_times = np.arange(reconstruction_time_range[0], reconstruction_time_range[1]+time_step, time_step)
+
+    tree_features = None
+    root_centroid_features = []
+
+    for reconstruction_time in reconstruction_times:
+
+        print 'working on time %0.2f Ma' % reconstruction_time
+
+        reconstructed_polygons = []
+        if polygon_type is 'topological':
+            pygplates.resolve_topologies(input_features, rotation_model, reconstructed_polygons, reconstruction_time)
+        
+        else:
+            pygplates.reconstruct(input_features, rotation_model, reconstructed_polygons, reconstruction_time)
+
+        uniq_plates_from_polygons = get_unique_plate_ids_from_reconstructed_features(reconstructed_polygons)
+
+        reconstruction_tree = rotation_model.get_reconstruction_tree(reconstruction_time)
+
+        chains = get_plate_chains(uniq_plates_from_polygons, reconstruction_tree)
+
+        tree_features = create_hierarchy_features(chains, reconstructed_polygons, tree_features,
+                                                  valid_time=(reconstruction_time+time_step/2.,
+                                                              reconstruction_time-time_step/2.))
+        
+        if root_feature_filename is not None:
+            
+            polygon_centroids = get_polygon_centroids(reconstructed_polygons)
+            root_plates = get_root_static_polygon_plate_ids(reconstruction_tree, uniq_plates_from_polygons)
+            
+            for root_plate in root_plates:
+                p0 = polygon_centroids[root_plate]
+                feature = pygplates.Feature()
+                feature.set_geometry(pygplates.PointOnSphere(p0))
+                feature.set_name(str(root_plate))
+                feature.set_valid_time(reconstruction_time+time_step/2.,
+                                       reconstruction_time-time_step/2.)
+                root_centroid_features.append(feature)
+
+
+    tree_feature_collection = pygplates.FeatureCollection(tree_features)
+    tree_feature_collection.write(filename)
+    
+    if root_feature_filename is not None:
+        tree_feature_collection = pygplates.FeatureCollection(root_centroid_features)
+        tree_feature_collection.write(root_feature_filename)
